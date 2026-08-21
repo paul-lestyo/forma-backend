@@ -16,8 +16,8 @@ import (
 var JWTSecret = []byte("habittracker_super_secret_jwt_key_2026")
 
 type authService struct {
-	userRepo   ports.UserRepository
-	habitRepo  ports.HabitRepository
+	userRepo  ports.UserRepository
+	habitRepo ports.HabitRepository
 }
 
 func NewAuthService(userRepo ports.UserRepository, habitRepo ports.HabitRepository) ports.AuthService {
@@ -39,12 +39,11 @@ func generateToken(userID int64, username string) (string, error) {
 
 func (s *authService) Register(ctx context.Context, req domain.RegisterRequest) (*domain.AuthResponse, error) {
 	username := strings.TrimSpace(strings.ToLower(req.Username))
-	displayName := strings.TrimSpace(req.DisplayName)
-
-	if username == "" || req.Password == "" {
-		return nil, errors.New("username and password are required")
+	if username == "" || len(req.Password) < 3 {
+		return nil, errors.New("invalid username or password (min 3 chars)")
 	}
 
+	displayName := strings.TrimSpace(req.DisplayName)
 	if displayName == "" {
 		displayName = username
 	}
@@ -65,8 +64,8 @@ func (s *authService) Register(ctx context.Context, req domain.RegisterRequest) 
 		DisplayName:  displayName,
 		TitleRank:    "Novice Adventurer",
 		Level:        1,
-		CurrentEXP:   65,
-		TotalEXP:     65,
+		CurrentEXP:   0,
+		TotalEXP:     0,
 	}
 
 	if err := s.userRepo.Create(ctx, user); err != nil {
@@ -80,11 +79,12 @@ func (s *authService) Register(ctx context.Context, req domain.RegisterRequest) 
 		EXPReward int
 		Frequency string
 	}{
-		{"Review pull request & monitoring log shift", "HIGH", 25, "daily"},
-		{"Latihan 10 kosakata baru", "MEDIUM", 15, "daily"},
-		{"Minum air 2 liter & stretching", "LOW", 10, "daily"},
-		{"Backup database & cleanup docker cache", "HIGH", 60, "monthly"},
-		{"Review progres investasi & alokasi portofolio", "MEDIUM", 40, "weekly"},
+		{"Morning Exercise", "MEDIUM", 15, "daily"},
+		{"Read for 30 minutes", "MEDIUM", 15, "daily"},
+		{"Meditate", "LOW", 10, "daily"},
+		{"Drink 8 glasses of water", "MEDIUM", 15, "daily"},
+		{"Write in journal", "LOW", 10, "daily"},
+		{"Swimming / Sports", "HIGH", 25, "weekly"},
 	}
 
 	for _, tmpl := range seedTemplates {
@@ -111,7 +111,6 @@ func (s *authService) Register(ctx context.Context, req domain.RegisterRequest) 
 
 func (s *authService) Login(ctx context.Context, req domain.LoginRequest) (*domain.AuthResponse, error) {
 	username := strings.TrimSpace(strings.ToLower(req.Username))
-
 	user, err := s.userRepo.FindByUsername(ctx, username)
 	if err != nil || user == nil {
 		return nil, errors.New("invalid username or password")
@@ -120,6 +119,26 @@ func (s *authService) Login(ctx context.Context, req domain.LoginRequest) (*doma
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
 		return nil, errors.New("invalid username or password")
 	}
+
+	todayWIB := GetWIBTodayString()
+	streak := user.StreakDays
+	if user.LastActiveDate != "" {
+		lastActiveTime, parseErr := time.ParseInLocation("2006-01-02", user.LastActiveDate, wibLocation)
+		todayTime, _ := time.ParseInLocation("2006-01-02", todayWIB, wibLocation)
+		if parseErr == nil {
+			diffDays := int(todayTime.Sub(lastActiveTime).Hours() / 24)
+			if diffDays == 1 {
+				streak++
+			} else if diffDays > 1 {
+				streak = 1
+			}
+		}
+	} else {
+		streak = 1
+	}
+
+	_ = s.userRepo.UpdateStats(ctx, user.ID, user.Level, user.CurrentEXP, user.TotalEXP, user.TitleRank, todayWIB)
+	user.StreakDays = streak
 
 	token, err := generateToken(user.ID, user.Username)
 	if err != nil {
