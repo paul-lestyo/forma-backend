@@ -4,8 +4,9 @@
 *.dll
 *.so
 *.dylib
-main
-api
+/main
+/api
+test_main.exe
 
 # Database
 data/
