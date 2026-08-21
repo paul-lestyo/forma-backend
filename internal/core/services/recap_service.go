@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"habittracker-be/internal/core/domain"
@@ -60,7 +61,7 @@ func (s *recapService) GetRecap(ctx context.Context, userID int64) (*domain.Reca
 	for i := 6; i >= 0; i-- {
 		day := now.AddDate(0, 0, -i)
 		dateStr := day.Format("2006-01-02")
-		dailyKey, weeklyKey, monthlyKey, _ := GetPeriodKeys(dateStr)
+		dailyKey, _, _, _ := GetPeriodKeys(dateStr)
 
 		dayEXP, _ := s.todoRepo.SumEXPByUserIDAndDate(ctx, userID, dateStr)
 
@@ -70,9 +71,15 @@ func (s *recapService) GetRecap(ctx context.Context, userID int64) (*domain.Reca
 				continue
 			}
 
-			if (tmpl.Frequency == "daily" && log.PeriodKey == dailyKey) ||
-				(tmpl.Frequency == "weekly" && log.PeriodKey == weeklyKey) ||
-				(tmpl.Frequency == "monthly" && log.PeriodKey == monthlyKey) {
+			// Attrib EXP to exact day completed
+			completedOnThisDay := false
+			if log.CompletedAt != "" && strings.HasPrefix(log.CompletedAt, dateStr) {
+				completedOnThisDay = true
+			} else if tmpl.Frequency == "daily" && log.PeriodKey == dailyKey {
+				completedOnThisDay = true
+			}
+
+			if completedOnThisDay {
 				dayEXP += tmpl.EXPReward
 			}
 		}
@@ -96,7 +103,6 @@ func (s *recapService) GetRecap(ctx context.Context, userID int64) (*domain.Reca
 	// Calculate weekly completion rate
 	completionRate := 100.0
 	if activeRoutinesCount > 0 {
-		// Expected habits over 7 days: daily * 7 + weekly * 1 + monthly * 0.25
 		expectedWeeklyTasks := 0
 		for _, t := range allTemplates {
 			if t.Frequency == "daily" {
