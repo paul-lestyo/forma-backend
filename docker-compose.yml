@@ -1,0 +1,13 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: habittracker-be
+    restart: always
+    ports:
+      - "8088:8088"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PORT=8088
