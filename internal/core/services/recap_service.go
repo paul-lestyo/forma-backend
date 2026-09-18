@@ -60,83 +60,7 @@ func (s *recapService) GetRecap(ctx context.Context, userID int64, monthStr stri
 	maxDayEXP := -1
 	peakDayName := "N/A"
 
-	// 1. 7-Day EXP History (with weekOffset support)
-	if weekOffset > 0 {
-		weekOffset = 0 // prevent navigating to future weeks
-	}
-
-	endDay := now.AddDate(0, 0, weekOffset*7)
-	startDay := endDay.AddDate(0, 0, -6)
-	weekRangeStr := fmt.Sprintf("%s - %s", startDay.Format("02 Jan"), endDay.Format("02 Jan"))
-
-	for i := 6; i >= 0; i-- {
-		day := endDay.AddDate(0, 0, -i)
-		dateStr := day.Format("2006-01-02")
-		dailyKey, _, _, _ := GetPeriodKeys(dateStr)
-
-		dayEXP, _ := s.todoRepo.SumEXPByUserIDAndDate(ctx, userID, dateStr)
-
-		for _, log := range allHabitLogs {
-			if log.Completed != 1 {
-				continue
-			}
-
-			tmpl, exists := tmplMap[log.TemplateID]
-			if !exists {
-				continue
-			}
-
-			// Attrib EXP to exact day completed
-			completedOnThisDay := false
-			if log.CompletedAt != "" && strings.HasPrefix(log.CompletedAt, dateStr) {
-				completedOnThisDay = true
-			} else if tmpl.Frequency == "daily" && log.PeriodKey == dailyKey {
-				completedOnThisDay = true
-			}
-
-			if completedOnThisDay {
-				dayEXP += tmpl.EXPReward
-			}
-		}
-
-		totalEXPThisWeek += dayEXP
-		if dayEXP > maxDayEXP && dayEXP > 0 {
-			maxDayEXP = dayEXP
-			peakDayName = fmt.Sprintf("%s (+%d EXP)", day.Format("Monday"), dayEXP)
-		}
-
-		expHistory = append(expHistory, domain.EXPDayHistory{
-			Date:      day.Format("02 Jan"),
-			EXPEarned: dayEXP,
-		})
-	}
-
-	if peakDayName == "N/A" && len(expHistory) > 0 {
-		peakDayName = "Today"
-	}
-
-	// 2. Weekly completion rate
-	completionRate := 100.0
-	if activeRoutinesCount > 0 {
-		expectedWeeklyTasks := 0
-		for _, t := range allTemplates {
-			if t.Frequency == "daily" {
-				expectedWeeklyTasks += 7
-			} else {
-				expectedWeeklyTasks += 1
-			}
-		}
-		if expectedWeeklyTasks > 0 {
-			completionRate = (float64(totalCompleted) / float64(expectedWeeklyTasks)) * 100.0
-			if completionRate > 100.0 {
-				completionRate = 100.0
-			}
-		}
-	} else if totalCompleted == 0 {
-		completionRate = 0.0
-	}
-
-	// 3. Pre-index completed todos & habit logs by date for fast lookup
+	// 1. Pre-index completed todos & habit logs by date for exact, fast lookup
 	completedTodos, _ := s.todoRepo.FindAllCompletedByUserID(ctx, userID)
 	todoEXPByDate := make(map[string]int)
 	todoCountByDate := make(map[string]int)
@@ -156,10 +80,11 @@ func (s *recapService) GetRecap(ctx context.Context, userID int64, monthStr stri
 			continue
 		}
 
+		// Exact date when the habit was completed
 		logDate := ""
 		if log.CompletedAt != "" && len(log.CompletedAt) >= 10 {
 			logDate = log.CompletedAt[:10]
-		} else if tmpl.Frequency == "daily" && len(log.PeriodKey) == 10 {
+		} else if tmpl.Frequency == "daily" && len(log.PeriodKey) == 10 && strings.Count(log.PeriodKey, "-") == 2 {
 			logDate = log.PeriodKey
 		}
 
@@ -167,6 +92,58 @@ func (s *recapService) GetRecap(ctx context.Context, userID int64, monthStr stri
 			habitEXPByDate[logDate] += tmpl.EXPReward
 			habitCountByDate[logDate]++
 		}
+	}
+
+	// 2. 7-Day EXP History (with weekOffset support)
+	if weekOffset > 0 {
+		weekOffset = 0 // prevent navigating to future weeks
+	}
+
+	endDay := now.AddDate(0, 0, weekOffset*7)
+	startDay := endDay.AddDate(0, 0, -6)
+	weekRangeStr := fmt.Sprintf("%s - %s", startDay.Format("02 Jan"), endDay.Format("02 Jan"))
+
+	for i := 6; i >= 0; i-- {
+		day := endDay.AddDate(0, 0, -i)
+		dateStr := day.Format("2006-01-02")
+
+		dayEXP := todoEXPByDate[dateStr] + habitEXPByDate[dateStr]
+
+		totalEXPThisWeek += dayEXP
+		if dayEXP > maxDayEXP && dayEXP > 0 {
+			maxDayEXP = dayEXP
+			peakDayName = fmt.Sprintf("%s (+%d EXP)", day.Format("Monday"), dayEXP)
+		}
+
+		expHistory = append(expHistory, domain.EXPDayHistory{
+			Date:      day.Format("02 Jan"),
+			EXPEarned: dayEXP,
+		})
+	}
+
+	if peakDayName == "N/A" && len(expHistory) > 0 {
+		peakDayName = "Today"
+	}
+
+	// 3. Weekly completion rate
+	completionRate := 100.0
+	if activeRoutinesCount > 0 {
+		expectedWeeklyTasks := 0
+		for _, t := range allTemplates {
+			if t.Frequency == "daily" {
+				expectedWeeklyTasks += 7
+			} else {
+				expectedWeeklyTasks += 1
+			}
+		}
+		if expectedWeeklyTasks > 0 {
+			completionRate = (float64(totalCompleted) / float64(expectedWeeklyTasks)) * 100.0
+			if completionRate > 100.0 {
+				completionRate = 100.0
+			}
+		}
+	} else if totalCompleted == 0 {
+		completionRate = 0.0
 	}
 
 	// 4. Monthly Activity

@@ -3,6 +3,8 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"time"
+
 	"habittracker-be/internal/core/domain"
 	"habittracker-be/internal/core/ports"
 )
@@ -20,10 +22,14 @@ func (r *logRepo) Create(ctx context.Context, log *domain.HabitLog) error {
 	if completedVal == 0 {
 		completedVal = 1
 	}
+	completedAtVal := log.CompletedAt
+	if completedAtVal == "" {
+		completedAtVal = time.Now().UTC().Format("2006-01-02 15:04:05")
+	}
 	res, err := r.db.ExecContext(
 		ctx,
-		"INSERT INTO habit_logs (user_id, template_id, period_key, completed) VALUES (?, ?, ?, ?)",
-		log.UserID, log.TemplateID, log.PeriodKey, completedVal,
+		"INSERT INTO habit_logs (user_id, template_id, period_key, completed, completed_at) VALUES (?, ?, ?, ?, ?)",
+		log.UserID, log.TemplateID, log.PeriodKey, completedVal, completedAtVal,
 	)
 	if err != nil {
 		return err
@@ -32,6 +38,7 @@ func (r *logRepo) Create(ctx context.Context, log *domain.HabitLog) error {
 	if err == nil {
 		log.ID = id
 		log.Completed = completedVal
+		log.CompletedAt = completedAtVal
 	}
 	return nil
 }

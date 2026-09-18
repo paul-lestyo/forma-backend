@@ -218,11 +218,16 @@ func (s *trackerService) ToggleQuest(ctx context.Context, userID int64, req doma
 			expChange = -tmpl.EXPReward
 			isNowCompleted = false
 		} else {
+			completedAtStr := fmt.Sprintf("%s 12:00:00", req.Date)
+			if req.Date == GetWIBTodayString() {
+				completedAtStr = time.Now().In(wibLocation).Format("2006-01-02 15:04:05")
+			}
 			_ = s.logRepo.Create(ctx, &domain.HabitLog{
-				UserID:     userID,
-				TemplateID: templateID,
-				PeriodKey:  targetPeriodKey,
-				Completed:  1,
+				UserID:      userID,
+				TemplateID:  templateID,
+				PeriodKey:   targetPeriodKey,
+				Completed:   1,
+				CompletedAt: completedAtStr,
 			})
 			expChange = tmpl.EXPReward
 			isNowCompleted = true
