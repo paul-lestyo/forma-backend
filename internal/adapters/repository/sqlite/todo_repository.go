@@ -118,3 +118,26 @@ func (r *todoRepo) FindCompletedDatesByUserID(ctx context.Context, userID int64)
 	}
 	return dates, nil
 }
+
+func (r *todoRepo) FindAllCompletedByUserID(ctx context.Context, userID int64) ([]domain.CustomTodo, error) {
+	rows, err := r.db.QueryContext(
+		ctx,
+		"SELECT id, user_id, title, priority, exp_reward, date, completed FROM custom_todos WHERE user_id = ? AND completed = 1",
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var todos []domain.CustomTodo
+	for rows.Next() {
+		var todo domain.CustomTodo
+		if err := rows.Scan(&todo.ID, &todo.UserID, &todo.Title, &todo.Priority, &todo.EXPReward, &todo.Date, &todo.Completed); err != nil {
+			continue
+		}
+		todos = append(todos, todo)
+	}
+	return todos, nil
+}
+

@@ -119,6 +119,8 @@ type RecapResponse struct {
 	MonthName            string               `json:"month_name"`
 	TotalEXPMonth        int                  `json:"total_exp_month"`
 	MonthlyActivity      []MonthlyDayActivity `json:"monthly_activity"`
+	ContributionGrid     []ContributionDay    `json:"contribution_grid"`
+	TotalContributions   int                  `json:"total_contributions"`
 }
 
 type EXPDayHistory struct {
@@ -133,4 +135,15 @@ type MonthlyDayActivity struct {
 	EXPEarned      int    `json:"exp_earned"`
 	Level          int    `json:"level"`           // 0..4 for heatmap shading
 	CompletedCount int    `json:"completed_count"`
+}
+
+type ContributionDay struct {
+	Date           string `json:"date"`            // YYYY-MM-DD
+	Day            int    `json:"day"`             // 1..31
+	DayOfWeek      int    `json:"day_of_week"`     // 1=Mon..7=Sun
+	Month          string `json:"month"`           // "Sep"
+	EXPEarned      int    `json:"exp_earned"`
+	Level          int    `json:"level"`           // 0..4 (-1 for future)
+	CompletedCount int    `json:"completed_count"`
+	IsFuture       bool   `json:"is_future"`
 }

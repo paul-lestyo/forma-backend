@@ -31,6 +31,7 @@ type TodoRepository interface {
 	CountCompletedByUserID(ctx context.Context, userID int64) (int, error)
 	SumEXPByUserIDAndDate(ctx context.Context, userID int64, date string) (int, error)
 	FindCompletedDatesByUserID(ctx context.Context, userID int64) ([]string, error)
+	FindAllCompletedByUserID(ctx context.Context, userID int64) ([]domain.CustomTodo, error)
 }
 
 type HabitLogRepository interface {

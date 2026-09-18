@@ -136,7 +136,40 @@ func (s *recapService) GetRecap(ctx context.Context, userID int64, monthStr stri
 		completionRate = 0.0
 	}
 
-	// 3. Monthly Activity (GitHub-style contribution heatmap)
+	// 3. Pre-index completed todos & habit logs by date for fast lookup
+	completedTodos, _ := s.todoRepo.FindAllCompletedByUserID(ctx, userID)
+	todoEXPByDate := make(map[string]int)
+	todoCountByDate := make(map[string]int)
+	for _, td := range completedTodos {
+		todoEXPByDate[td.Date] += td.EXPReward
+		todoCountByDate[td.Date]++
+	}
+
+	habitEXPByDate := make(map[string]int)
+	habitCountByDate := make(map[string]int)
+	for _, log := range allHabitLogs {
+		if log.Completed != 1 {
+			continue
+		}
+		tmpl, exists := tmplMap[log.TemplateID]
+		if !exists {
+			continue
+		}
+
+		logDate := ""
+		if log.CompletedAt != "" && len(log.CompletedAt) >= 10 {
+			logDate = log.CompletedAt[:10]
+		} else if tmpl.Frequency == "daily" && len(log.PeriodKey) == 10 {
+			logDate = log.PeriodKey
+		}
+
+		if logDate != "" {
+			habitEXPByDate[logDate] += tmpl.EXPReward
+			habitCountByDate[logDate]++
+		}
+	}
+
+	// 4. Monthly Activity
 	if monthStr == "" || len(monthStr) != 7 {
 		monthStr = now.Format("2006-01")
 	}
@@ -158,44 +191,11 @@ func (s *recapService) GetRecap(ctx context.Context, userID int64, monthStr stri
 	for d := 1; d <= daysInMonth; d++ {
 		currentDate := time.Date(targetMonth.Year(), targetMonth.Month(), d, 0, 0, 0, 0, wibLocation)
 		dateStr := currentDate.Format("2006-01-02")
-		dailyKey, _, _, _ := GetPeriodKeys(dateStr)
 
-		dayEXP, _ := s.todoRepo.SumEXPByUserIDAndDate(ctx, userID, dateStr)
-		completedCount := 0
-
-		todosForDay, _ := s.todoRepo.FindByUserIDAndDate(ctx, userID, dateStr)
-		for _, td := range todosForDay {
-			if td.Completed == 1 {
-				completedCount++
-			}
-		}
-
-		for _, log := range allHabitLogs {
-			if log.Completed != 1 {
-				continue
-			}
-
-			tmpl, exists := tmplMap[log.TemplateID]
-			if !exists {
-				continue
-			}
-
-			completedOnThisDay := false
-			if log.CompletedAt != "" && strings.HasPrefix(log.CompletedAt, dateStr) {
-				completedOnThisDay = true
-			} else if tmpl.Frequency == "daily" && log.PeriodKey == dailyKey {
-				completedOnThisDay = true
-			}
-
-			if completedOnThisDay {
-				dayEXP += tmpl.EXPReward
-				completedCount++
-			}
-		}
-
+		dayEXP := todoEXPByDate[dateStr] + habitEXPByDate[dateStr]
+		completedCount := todoCountByDate[dateStr] + habitCountByDate[dateStr]
 		totalEXPMonth += dayEXP
 
-		// Calculate heatmap intensity level (0 to 4)
 		level := 0
 		if dayEXP >= 100 {
 			level = 4
@@ -207,7 +207,6 @@ func (s *recapService) GetRecap(ctx context.Context, userID int64, monthStr stri
 			level = 1
 		}
 
-		// ISO Weekday: 1=Mon..7=Sun
 		isoWeekday := int(currentDate.Weekday())
 		if isoWeekday == 0 {
 			isoWeekday = 7
@@ -220,6 +219,59 @@ func (s *recapService) GetRecap(ctx context.Context, userID int64, monthStr stri
 			EXPEarned:      dayEXP,
 			Level:          level,
 			CompletedCount: completedCount,
+		})
+	}
+
+	// 5. GitHub Contribution Grid (Past 20 weeks, Mon to Sun = 140 days)
+	daysFromMon := (int(now.Weekday()) + 6) % 7
+	thisWeekMon := time.Date(now.Year(), now.Month(), now.Day()-daysFromMon, 0, 0, 0, 0, wibLocation)
+	thisWeekSun := thisWeekMon.AddDate(0, 0, 6)
+	startMon := thisWeekMon.AddDate(0, 0, -19*7) // 20 weeks total
+
+	var contributionGrid []domain.ContributionDay
+	totalContributions := 0
+	todayStr := now.Format("2006-01-02")
+
+	for curr := startMon; !curr.After(thisWeekSun); curr = curr.AddDate(0, 0, 1) {
+		dateStr := curr.Format("2006-01-02")
+		isFuture := dateStr > todayStr
+
+		dayEXP := 0
+		completedCount := 0
+		level := 0
+
+		if isFuture {
+			level = -1
+		} else {
+			dayEXP = todoEXPByDate[dateStr] + habitEXPByDate[dateStr]
+			completedCount = todoCountByDate[dateStr] + habitCountByDate[dateStr]
+			totalContributions += completedCount
+
+			if dayEXP >= 100 {
+				level = 4
+			} else if dayEXP >= 50 {
+				level = 3
+			} else if dayEXP >= 25 {
+				level = 2
+			} else if dayEXP > 0 {
+				level = 1
+			}
+		}
+
+		isoWeekday := int(curr.Weekday())
+		if isoWeekday == 0 {
+			isoWeekday = 7
+		}
+
+		contributionGrid = append(contributionGrid, domain.ContributionDay{
+			Date:           dateStr,
+			Day:            curr.Day(),
+			DayOfWeek:      isoWeekday,
+			Month:          curr.Format("Jan"),
+			EXPEarned:      dayEXP,
+			Level:          level,
+			CompletedCount: completedCount,
+			IsFuture:       isFuture,
 		})
 	}
 
@@ -237,5 +289,7 @@ func (s *recapService) GetRecap(ctx context.Context, userID int64, monthStr stri
 		MonthName:            monthName,
 		TotalEXPMonth:        totalEXPMonth,
 		MonthlyActivity:      monthlyActivity,
+		ContributionGrid:     contributionGrid,
+		TotalContributions:   totalContributions,
 	}, nil
 }
