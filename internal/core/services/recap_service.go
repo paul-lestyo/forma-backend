@@ -80,12 +80,14 @@ func (s *recapService) GetRecap(ctx context.Context, userID int64, monthStr stri
 			continue
 		}
 
-		// Exact date when the habit was completed
+		// Exact date attribution:
+		// 1. For daily habits: strictly belongs to the target date (period_key = YYYY-MM-DD)
+		// 2. For weekly/monthly habits: belongs to the date it was completed (completed_at[:10])
 		logDate := ""
-		if log.CompletedAt != "" && len(log.CompletedAt) >= 10 {
-			logDate = log.CompletedAt[:10]
-		} else if tmpl.Frequency == "daily" && len(log.PeriodKey) == 10 && strings.Count(log.PeriodKey, "-") == 2 {
+		if tmpl.Frequency == "daily" && len(log.PeriodKey) == 10 && strings.Count(log.PeriodKey, "-") == 2 {
 			logDate = log.PeriodKey
+		} else if log.CompletedAt != "" && len(log.CompletedAt) >= 10 {
+			logDate = log.CompletedAt[:10]
 		}
 
 		if logDate != "" {
