@@ -101,3 +101,20 @@ func (r *todoRepo) SumEXPByUserIDAndDate(ctx context.Context, userID int64, date
 	}
 	return 0, nil
 }
+
+func (r *todoRepo) FindCompletedDatesByUserID(ctx context.Context, userID int64) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, "SELECT DISTINCT date FROM custom_todos WHERE user_id = ? AND completed = 1", userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var dates []string
+	for rows.Next() {
+		var d string
+		if err := rows.Scan(&d); err == nil {
+			dates = append(dates, d)
+		}
+	}
+	return dates, nil
+}

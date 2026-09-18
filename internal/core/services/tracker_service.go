@@ -81,6 +81,9 @@ func (s *trackerService) GetTrackerQuests(ctx context.Context, userID int64, dat
 			}
 
 			log, logErr := s.logRepo.FindByUserTemplatePeriod(ctx, userID, tmpl.ID, targetPeriodKey)
+			if logErr == nil && log != nil && log.Completed == -1 {
+				continue
+			}
 			isCompleted := (logErr == nil && log != nil && log.Completed == 1)
 
 			quests = append(quests, domain.QuestItem{
@@ -262,8 +265,9 @@ func (s *trackerService) ToggleQuest(ctx context.Context, userID int64, req doma
 		user.TitleRank = "Apprentice Tracker"
 	}
 
+	streakDays := CalculateUserStreak(ctx, userID, s.logRepo, s.todoRepo)
 	todayWIB := GetWIBTodayString()
-	_ = s.userRepo.UpdateStats(ctx, userID, user.Level, user.CurrentEXP, user.TotalEXP, user.TitleRank, todayWIB)
+	_ = s.userRepo.UpdateStats(ctx, userID, user.Level, user.CurrentEXP, user.TotalEXP, streakDays, user.TitleRank, todayWIB)
 
 	return &domain.ToggleQuestResponse{
 		Completed:  isNowCompleted,
@@ -273,12 +277,61 @@ func (s *trackerService) ToggleQuest(ctx context.Context, userID int64, req doma
 		CurrentEXP: user.CurrentEXP,
 		TotalEXP:   user.TotalEXP,
 		TargetEXP:  targetEXP,
+		StreakDays: streakDays,
 	}, nil
 }
 
-func (s *trackerService) DeleteQuest(ctx context.Context, userID int64, id int64, itemType string) error {
+func (s *trackerService) DeleteQuest(ctx context.Context, userID int64, id int64, itemType string, dateStr string) error {
 	if itemType == "custom" {
 		return s.todoRepo.Delete(ctx, id, userID)
 	}
-	return s.habitRepo.SoftDelete(ctx, id, userID)
+
+	if dateStr == "" {
+		dateStr = GetWIBTodayString()
+	}
+
+	dailyKey, weeklyKey, monthlyKey, err := GetPeriodKeys(dateStr)
+	if err != nil {
+		return errors.New("invalid date format")
+	}
+
+	tmpl, err := s.habitRepo.FindByID(ctx, id, userID)
+	if err != nil || tmpl == nil {
+		return errors.New("habit template not found")
+	}
+
+	targetPeriodKey := dailyKey
+	if tmpl.Frequency == "weekly" {
+		targetPeriodKey = weeklyKey
+	} else if tmpl.Frequency == "monthly" {
+		targetPeriodKey = monthlyKey
+	}
+
+	existingLog, _ := s.logRepo.FindByUserTemplatePeriod(ctx, userID, id, targetPeriodKey)
+
+	// If it was already completed (+EXP), revert the EXP before marking as skipped
+	if existingLog != nil && existingLog.Completed == 1 {
+		user, err := s.userRepo.FindByID(ctx, userID)
+		if err == nil && user != nil {
+			user.CurrentEXP -= tmpl.EXPReward
+			user.TotalEXP -= tmpl.EXPReward
+			if user.CurrentEXP < 0 {
+				user.CurrentEXP = 0
+			}
+			if user.TotalEXP < 0 {
+				user.TotalEXP = 0
+			}
+			streakDays := CalculateUserStreak(ctx, userID, s.logRepo, s.todoRepo)
+			todayWIB := GetWIBTodayString()
+			_ = s.userRepo.UpdateStats(ctx, userID, user.Level, user.CurrentEXP, user.TotalEXP, streakDays, user.TitleRank, todayWIB)
+		}
+	}
+
+	// Upsert habit log with completed = -1 (skipped for this date/period)
+	return s.logRepo.Upsert(ctx, &domain.HabitLog{
+		UserID:     userID,
+		TemplateID: id,
+		PeriodKey:  targetPeriodKey,
+		Completed:  -1,
+	})
 }

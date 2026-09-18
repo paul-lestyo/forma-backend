@@ -102,19 +102,35 @@ type ToggleQuestResponse struct {
 	CurrentEXP int  `json:"current_exp"`
 	TotalEXP   int  `json:"total_exp"`
 	TargetEXP  int  `json:"target_exp"`
+	StreakDays int  `json:"streak_days"`
 }
 
 type RecapResponse struct {
-	TotalQuestsCompleted int             `json:"total_quests_completed"`
-	StreakDays           int             `json:"streak_days"`
-	WeeklyCompletionRate float64         `json:"weekly_completion_rate"`
-	TotalEXPThisWeek     int             `json:"total_exp_this_week"`
-	PeakDay              string          `json:"peak_day"`
-	ActiveRoutinesCount  int             `json:"active_routines_count"`
-	RecentEXPHistory     []EXPDayHistory `json:"exp_history"`
+	TotalQuestsCompleted int                  `json:"total_quests_completed"`
+	StreakDays           int                  `json:"streak_days"`
+	WeeklyCompletionRate float64              `json:"weekly_completion_rate"`
+	TotalEXPThisWeek     int                  `json:"total_exp_this_week"`
+	PeakDay              string               `json:"peak_day"`
+	ActiveRoutinesCount  int                  `json:"active_routines_count"`
+	RecentEXPHistory     []EXPDayHistory      `json:"exp_history"`
+	WeekRange            string               `json:"week_range"`
+	WeekOffset           int                  `json:"week_offset"`
+	SelectedMonth        string               `json:"selected_month"`
+	MonthName            string               `json:"month_name"`
+	TotalEXPMonth        int                  `json:"total_exp_month"`
+	MonthlyActivity      []MonthlyDayActivity `json:"monthly_activity"`
 }
 
 type EXPDayHistory struct {
 	Date      string `json:"date"`
 	EXPEarned int    `json:"exp_earned"`
+}
+
+type MonthlyDayActivity struct {
+	Date           string `json:"date"`            // YYYY-MM-DD
+	Day            int    `json:"day"`             // 1..31
+	DayOfWeek      int    `json:"day_of_week"`     // 1=Mon..7=Sun
+	EXPEarned      int    `json:"exp_earned"`
+	Level          int    `json:"level"`           // 0..4 for heatmap shading
+	CompletedCount int    `json:"completed_count"`
 }

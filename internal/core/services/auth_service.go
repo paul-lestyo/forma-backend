@@ -18,12 +18,16 @@ var JWTSecret = []byte("habittracker_super_secret_jwt_key_2026")
 type authService struct {
 	userRepo  ports.UserRepository
 	habitRepo ports.HabitRepository
+	todoRepo  ports.TodoRepository
+	logRepo   ports.HabitLogRepository
 }
 
-func NewAuthService(userRepo ports.UserRepository, habitRepo ports.HabitRepository) ports.AuthService {
+func NewAuthService(userRepo ports.UserRepository, habitRepo ports.HabitRepository, todoRepo ports.TodoRepository, logRepo ports.HabitLogRepository) ports.AuthService {
 	return &authService{
 		userRepo:  userRepo,
 		habitRepo: habitRepo,
+		todoRepo:  todoRepo,
+		logRepo:   logRepo,
 	}
 }
 
@@ -120,24 +124,9 @@ func (s *authService) Login(ctx context.Context, req domain.LoginRequest) (*doma
 		return nil, errors.New("invalid username or password")
 	}
 
+	streak := CalculateUserStreak(ctx, user.ID, s.logRepo, s.todoRepo)
 	todayWIB := GetWIBTodayString()
-	streak := user.StreakDays
-	if user.LastActiveDate != "" {
-		lastActiveTime, parseErr := time.ParseInLocation("2006-01-02", user.LastActiveDate, wibLocation)
-		todayTime, _ := time.ParseInLocation("2006-01-02", todayWIB, wibLocation)
-		if parseErr == nil {
-			diffDays := int(todayTime.Sub(lastActiveTime).Hours() / 24)
-			if diffDays == 1 {
-				streak++
-			} else if diffDays > 1 {
-				streak = 1
-			}
-		}
-	} else {
-		streak = 1
-	}
-
-	_ = s.userRepo.UpdateStats(ctx, user.ID, user.Level, user.CurrentEXP, user.TotalEXP, user.TitleRank, todayWIB)
+	_ = s.userRepo.UpdateStats(ctx, user.ID, user.Level, user.CurrentEXP, user.TotalEXP, streak, user.TitleRank, todayWIB)
 	user.StreakDays = streak
 
 	token, err := generateToken(user.ID, user.Username)
@@ -152,5 +141,15 @@ func (s *authService) Login(ctx context.Context, req domain.LoginRequest) (*doma
 }
 
 func (s *authService) GetProfile(ctx context.Context, userID int64) (*domain.User, error) {
-	return s.userRepo.FindByID(ctx, userID)
+	user, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil || user == nil {
+		return nil, err
+	}
+	streak := CalculateUserStreak(ctx, userID, s.logRepo, s.todoRepo)
+	if streak != user.StreakDays {
+		user.StreakDays = streak
+		todayWIB := GetWIBTodayString()
+		_ = s.userRepo.UpdateStats(ctx, user.ID, user.Level, user.CurrentEXP, user.TotalEXP, streak, user.TitleRank, todayWIB)
+	}
+	return user, nil
 }

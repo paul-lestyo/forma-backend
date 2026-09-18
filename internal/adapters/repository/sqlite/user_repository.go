@@ -59,11 +59,11 @@ func (r *userRepo) FindByID(ctx context.Context, id int64) (*domain.User, error)
 	return &u, nil
 }
 
-func (r *userRepo) UpdateStats(ctx context.Context, userID int64, level, currentEXP, totalEXP int, titleRank, lastActiveDate string) error {
+func (r *userRepo) UpdateStats(ctx context.Context, userID int64, level, currentEXP, totalEXP, streakDays int, titleRank, lastActiveDate string) error {
 	_, err := r.db.ExecContext(
 		ctx,
-		"UPDATE users SET level = ?, current_exp = ?, total_exp = ?, title_rank = ?, last_active_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-		level, currentEXP, totalEXP, titleRank, lastActiveDate, userID,
+		"UPDATE users SET level = ?, current_exp = ?, total_exp = ?, streak_days = ?, title_rank = ?, last_active_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+		level, currentEXP, totalEXP, streakDays, titleRank, lastActiveDate, userID,
 	)
 	return err
 }

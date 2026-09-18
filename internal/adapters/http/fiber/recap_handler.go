@@ -20,7 +20,10 @@ func (h *RecapHandler) GetRecap(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized access"})
 	}
 
-	res, err := h.recapService.GetRecap(c.Context(), userID)
+	monthStr := c.Query("month")
+	weekOffset := c.QueryInt("week_offset", 0)
+
+	res, err := h.recapService.GetRecap(c.Context(), userID, monthStr, weekOffset)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}

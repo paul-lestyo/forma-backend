@@ -16,10 +16,14 @@ func NewHabitLogRepository(db *sql.DB) ports.HabitLogRepository {
 }
 
 func (r *logRepo) Create(ctx context.Context, log *domain.HabitLog) error {
+	completedVal := log.Completed
+	if completedVal == 0 {
+		completedVal = 1
+	}
 	res, err := r.db.ExecContext(
 		ctx,
-		"INSERT INTO habit_logs (user_id, template_id, period_key, completed) VALUES (?, ?, ?, 1)",
-		log.UserID, log.TemplateID, log.PeriodKey,
+		"INSERT INTO habit_logs (user_id, template_id, period_key, completed) VALUES (?, ?, ?, ?)",
+		log.UserID, log.TemplateID, log.PeriodKey, completedVal,
 	)
 	if err != nil {
 		return err
@@ -27,8 +31,32 @@ func (r *logRepo) Create(ctx context.Context, log *domain.HabitLog) error {
 	id, err := res.LastInsertId()
 	if err == nil {
 		log.ID = id
-		log.Completed = 1
+		log.Completed = completedVal
 	}
+	return nil
+}
+
+func (r *logRepo) Upsert(ctx context.Context, log *domain.HabitLog) error {
+	completedVal := log.Completed
+	if completedVal == 0 {
+		completedVal = 1
+	}
+	res, err := r.db.ExecContext(
+		ctx,
+		`INSERT INTO habit_logs (user_id, template_id, period_key, completed, completed_at)
+		 VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+		 ON CONFLICT(user_id, template_id, period_key)
+		 DO UPDATE SET completed = excluded.completed, completed_at = CURRENT_TIMESTAMP`,
+		log.UserID, log.TemplateID, log.PeriodKey, completedVal,
+	)
+	if err != nil {
+		return err
+	}
+	id, err := res.LastInsertId()
+	if err == nil && id > 0 {
+		log.ID = id
+	}
+	log.Completed = completedVal
 	return nil
 }
 

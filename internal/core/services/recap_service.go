@@ -31,15 +31,17 @@ func NewRecapService(
 	}
 }
 
-func (s *recapService) GetRecap(ctx context.Context, userID int64) (*domain.RecapResponse, error) {
+func (s *recapService) GetRecap(ctx context.Context, userID int64, monthStr string, weekOffset int) (*domain.RecapResponse, error) {
 	totalCustom, _ := s.todoRepo.CountCompletedByUserID(ctx, userID)
 	totalLogs, _ := s.logRepo.CountCompletedByUserID(ctx, userID)
 	totalCompleted := totalCustom + totalLogs
 
 	user, _ := s.userRepo.FindByID(ctx, userID)
-	streakDays := 0
-	if user != nil {
-		streakDays = user.StreakDays
+	streakDays := CalculateUserStreak(ctx, userID, s.logRepo, s.todoRepo)
+	if user != nil && user.StreakDays != streakDays {
+		user.StreakDays = streakDays
+		todayWIB := GetWIBTodayString()
+		_ = s.userRepo.UpdateStats(ctx, user.ID, user.Level, user.CurrentEXP, user.TotalEXP, streakDays, user.TitleRank, todayWIB)
 	}
 
 	now := time.Now().In(wibLocation)
@@ -58,14 +60,27 @@ func (s *recapService) GetRecap(ctx context.Context, userID int64) (*domain.Reca
 	maxDayEXP := -1
 	peakDayName := "N/A"
 
+	// 1. 7-Day EXP History (with weekOffset support)
+	if weekOffset > 0 {
+		weekOffset = 0 // prevent navigating to future weeks
+	}
+
+	endDay := now.AddDate(0, 0, weekOffset*7)
+	startDay := endDay.AddDate(0, 0, -6)
+	weekRangeStr := fmt.Sprintf("%s - %s", startDay.Format("02 Jan"), endDay.Format("02 Jan"))
+
 	for i := 6; i >= 0; i-- {
-		day := now.AddDate(0, 0, -i)
+		day := endDay.AddDate(0, 0, -i)
 		dateStr := day.Format("2006-01-02")
 		dailyKey, _, _, _ := GetPeriodKeys(dateStr)
 
 		dayEXP, _ := s.todoRepo.SumEXPByUserIDAndDate(ctx, userID, dateStr)
 
 		for _, log := range allHabitLogs {
+			if log.Completed != 1 {
+				continue
+			}
+
 			tmpl, exists := tmplMap[log.TemplateID]
 			if !exists {
 				continue
@@ -100,7 +115,7 @@ func (s *recapService) GetRecap(ctx context.Context, userID int64) (*domain.Reca
 		peakDayName = "Today"
 	}
 
-	// Calculate weekly completion rate
+	// 2. Weekly completion rate
 	completionRate := 100.0
 	if activeRoutinesCount > 0 {
 		expectedWeeklyTasks := 0
@@ -121,6 +136,93 @@ func (s *recapService) GetRecap(ctx context.Context, userID int64) (*domain.Reca
 		completionRate = 0.0
 	}
 
+	// 3. Monthly Activity (GitHub-style contribution heatmap)
+	if monthStr == "" || len(monthStr) != 7 {
+		monthStr = now.Format("2006-01")
+	}
+
+	targetMonth, err := time.ParseInLocation("2006-01", monthStr, wibLocation)
+	if err != nil {
+		targetMonth = now
+		monthStr = now.Format("2006-01")
+	}
+
+	firstDay := time.Date(targetMonth.Year(), targetMonth.Month(), 1, 0, 0, 0, 0, wibLocation)
+	lastDay := firstDay.AddDate(0, 1, -1)
+	daysInMonth := lastDay.Day()
+	monthName := targetMonth.Format("January 2006")
+
+	var monthlyActivity []domain.MonthlyDayActivity
+	totalEXPMonth := 0
+
+	for d := 1; d <= daysInMonth; d++ {
+		currentDate := time.Date(targetMonth.Year(), targetMonth.Month(), d, 0, 0, 0, 0, wibLocation)
+		dateStr := currentDate.Format("2006-01-02")
+		dailyKey, _, _, _ := GetPeriodKeys(dateStr)
+
+		dayEXP, _ := s.todoRepo.SumEXPByUserIDAndDate(ctx, userID, dateStr)
+		completedCount := 0
+
+		todosForDay, _ := s.todoRepo.FindByUserIDAndDate(ctx, userID, dateStr)
+		for _, td := range todosForDay {
+			if td.Completed == 1 {
+				completedCount++
+			}
+		}
+
+		for _, log := range allHabitLogs {
+			if log.Completed != 1 {
+				continue
+			}
+
+			tmpl, exists := tmplMap[log.TemplateID]
+			if !exists {
+				continue
+			}
+
+			completedOnThisDay := false
+			if log.CompletedAt != "" && strings.HasPrefix(log.CompletedAt, dateStr) {
+				completedOnThisDay = true
+			} else if tmpl.Frequency == "daily" && log.PeriodKey == dailyKey {
+				completedOnThisDay = true
+			}
+
+			if completedOnThisDay {
+				dayEXP += tmpl.EXPReward
+				completedCount++
+			}
+		}
+
+		totalEXPMonth += dayEXP
+
+		// Calculate heatmap intensity level (0 to 4)
+		level := 0
+		if dayEXP >= 100 {
+			level = 4
+		} else if dayEXP >= 50 {
+			level = 3
+		} else if dayEXP >= 25 {
+			level = 2
+		} else if dayEXP > 0 {
+			level = 1
+		}
+
+		// ISO Weekday: 1=Mon..7=Sun
+		isoWeekday := int(currentDate.Weekday())
+		if isoWeekday == 0 {
+			isoWeekday = 7
+		}
+
+		monthlyActivity = append(monthlyActivity, domain.MonthlyDayActivity{
+			Date:           dateStr,
+			Day:            d,
+			DayOfWeek:      isoWeekday,
+			EXPEarned:      dayEXP,
+			Level:          level,
+			CompletedCount: completedCount,
+		})
+	}
+
 	return &domain.RecapResponse{
 		TotalQuestsCompleted: totalCompleted,
 		StreakDays:           streakDays,
@@ -129,5 +231,11 @@ func (s *recapService) GetRecap(ctx context.Context, userID int64) (*domain.Reca
 		PeakDay:              peakDayName,
 		ActiveRoutinesCount:  activeRoutinesCount,
 		RecentEXPHistory:     expHistory,
+		WeekRange:            weekRangeStr,
+		WeekOffset:           weekOffset,
+		SelectedMonth:        monthStr,
+		MonthName:            monthName,
+		TotalEXPMonth:        totalEXPMonth,
+		MonthlyActivity:      monthlyActivity,
 	}, nil
 }

@@ -22,7 +22,7 @@ func main() {
 	logRepo := sqliterepo.NewHabitLogRepository(db)
 
 	// 3. Instantiate Core Domain Services
-	authService := services.NewAuthService(userRepo, habitRepo)
+	authService := services.NewAuthService(userRepo, habitRepo, todoRepo, logRepo)
 	trackerService := services.NewTrackerService(userRepo, habitRepo, todoRepo, logRepo)
 	routineService := services.NewRoutineService(habitRepo)
 	recapService := services.NewRecapService(userRepo, habitRepo, todoRepo, logRepo)

@@ -100,8 +100,9 @@ func (h *TrackerHandler) DeleteQuest(c *fiber.Ctx) error {
 	}
 
 	itemType := c.Query("type", "custom")
+	dateStr := c.Query("date")
 
-	if err := h.trackerService.DeleteQuest(c.Context(), userID, int64(questID), itemType); err != nil {
+	if err := h.trackerService.DeleteQuest(c.Context(), userID, int64(questID), itemType, dateStr); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 

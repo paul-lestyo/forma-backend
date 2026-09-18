@@ -15,7 +15,7 @@ type TrackerService interface {
 	GetTrackerQuests(ctx context.Context, userID int64, dateStr string) ([]domain.QuestItem, error)
 	CreateCustomQuest(ctx context.Context, userID int64, req domain.CreateCustomTodoRequest) (*domain.QuestItem, error)
 	ToggleQuest(ctx context.Context, userID int64, req domain.ToggleQuestRequest) (*domain.ToggleQuestResponse, error)
-	DeleteQuest(ctx context.Context, userID int64, id int64, itemType string) error
+	DeleteQuest(ctx context.Context, userID int64, id int64, itemType string, dateStr string) error
 }
 
 type RoutineService interface {
@@ -26,5 +26,5 @@ type RoutineService interface {
 }
 
 type RecapService interface {
-	GetRecap(ctx context.Context, userID int64) (*domain.RecapResponse, error)
+	GetRecap(ctx context.Context, userID int64, monthStr string, weekOffset int) (*domain.RecapResponse, error)
 }
