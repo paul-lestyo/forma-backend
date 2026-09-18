@@ -176,11 +176,11 @@ func (s *recapService) GetRecap(ctx context.Context, userID int64, monthStr stri
 		totalEXPMonth += dayEXP
 
 		level := 0
-		if dayEXP >= 100 {
+		if dayEXP >= 225 {
 			level = 4
-		} else if dayEXP >= 50 {
+		} else if dayEXP >= 150 {
 			level = 3
-		} else if dayEXP >= 25 {
+		} else if dayEXP >= 75 {
 			level = 2
 		} else if dayEXP > 0 {
 			level = 1
@@ -226,11 +226,11 @@ func (s *recapService) GetRecap(ctx context.Context, userID int64, monthStr stri
 			completedCount = todoCountByDate[dateStr] + habitCountByDate[dateStr]
 			totalContributions += completedCount
 
-			if dayEXP >= 100 {
+			if dayEXP >= 225 {
 				level = 4
-			} else if dayEXP >= 50 {
+			} else if dayEXP >= 150 {
 				level = 3
-			} else if dayEXP >= 25 {
+			} else if dayEXP >= 75 {
 				level = 2
 			} else if dayEXP > 0 {
 				level = 1
